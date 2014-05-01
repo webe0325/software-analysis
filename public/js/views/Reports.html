@@ -1,0 +1,313 @@
+<div class="page-header">
+	<h2>Incident Reports</h2>
+	<input type="button" style="float:right" value="Save as PDF" onclick="SaveAsPDF();" />
+</div>
+
+<style type="text/css" title="currentStyle">
+	@import "assets/stylesheets/jquery.datatables.css";
+	@import "assets/stylesheets/jquery.datatables_themeroller.css";
+</style>
+		
+<script type="text/javascript" language="javascript" src="assets/js/jquery.js"></script>
+<script type="text/javascript" language="javascript" src="assets/js/jquery.dataTables.js"></script>
+
+<!-- JS PDF from http://parall.ax/products/jspdf and http://mrrio.github.io/jsPDF/ Note: SOME OF THESE MAY BE REMOVED -->
+<script type="text/javascript" src="assets/js/jspdf.js"></script>
+<script type="text/javascript" src="assets/js/FileSaver.js"></script>
+<script type="text/javascript" src="assets/js/Blob.js"></script>
+<script type="text/javascript" src="assets/js/BlobBuilder.js"></script>
+
+<script type="text/javascript" src="assets/js/deflate.js"></script>
+<script type="text/javascript" src="assets/js/adler32cs.js"></script>
+
+<script type="text/javascript" src="assets/js/jspdf.plugin.addimage.js"></script>
+<script type="text/javascript" src="assets/js/jspdf.plugin.from_html.js"></script>
+<script type="text/javascript" src="assets/js/jspdf.plugin.ie_below_9_shim.js"></script>
+<script type="text/javascript" src="assets/js/jspdf.plugin.sillysvgrenderer.js"></script>
+<script type="text/javascript" src="assets/js/jspdf.plugin.split_text_to_size.js"></script>
+<script type="text/javascript" src="assets/js/jspdf.plugin.standard_fonts_metrics.js"></script>
+<script type="text/javascript" src="assets/js/jspdf.plugin.cell.js"></script>
+<!-- End JS PDF-->
+
+<div ng-controller= "getReports" id="Reports_Div">
+<div id="reportdate" style="font-size:large; margin-bottom:30px;"></div>
+	<table class="table table-hover" id="reports_table">
+		<thead>
+			<tr style="cursor:pointer;">
+				<th style="width:50;">ID</th>
+				<th>Priority</th>
+				<th>Date</th>
+				<th>Assigned Agent</th>
+				<th>Status</th>
+				<th>Requester</th>
+				<th>Subject</th>
+			</tr>
+		</thead>
+		<tbody>
+			<tr ng-repeat="incident in incident">
+				<td><a href="#/incident/{{incident.id}}">{{ incident.id }}</a></td>
+				<td>{{ incident.priority }}</td>
+				<td>{{ incident.startdate | date:'shortDate'}}</td>
+				<td>{{ incident.owner.fullname }}</td>
+				<td>{{ incident.status}}</td>
+				<td><a href='#/contacts/{{incident.requester.id}}'>{{ incident.requester.fullname }}</a></td>
+				<td>{{ incident.subject | cut:true:50:' ...'}}</td>
+			</tr>
+		</tbody>
+		<tfoot>
+			<tr>
+				<th id="table_footer_id"></th>
+				<th></th>
+				<th></th>
+				<th></th>
+				<th></th>
+				<th></th>
+				<th></th>				
+			</tr>
+		</tfoot>		
+	</table>
+		
+</div>		
+
+<script type="text/javascript" charset="utf-8">
+
+(function($) {
+/*
+ * Function: fnGetColumnData
+ * Purpose:  Return an array of table values from a particular column.
+ * Returns:  array string: 1d data array
+ * Inputs:   object:oSettings - dataTable settings object. This is always the last argument past to the function
+ *           int:iColumn - the id of the column to extract the data from
+ *           bool:bUnique - optional - if set to false duplicated values are not filtered out
+ *           bool:bFiltered - optional - if set to false all the table data is used (not only the filtered)
+ *           bool:bIgnoreEmpty - optional - if set to false empty values are not filtered from the result array
+ */
+$.fn.dataTableExt.oApi.fnGetColumnData = function ( oSettings, iColumn, bUnique, bFiltered, bIgnoreEmpty ) {
+    // check that we have a column id
+    if ( typeof iColumn == "undefined" ) return new Array();
+     
+    // by default we only want unique data
+    if ( typeof bUnique == "undefined" ) bUnique = true;
+     
+    // by default we do want to only look at filtered data
+    if ( typeof bFiltered == "undefined" ) bFiltered = true;
+     
+    // by default we do not want to include empty values
+    if ( typeof bIgnoreEmpty == "undefined" ) bIgnoreEmpty = true;
+     
+    // list of rows which we're going to loop through
+    var aiRows;
+     
+    // use only filtered rows
+    if (bFiltered == true) aiRows = oSettings.aiDisplay;
+    // use all rows
+    else aiRows = oSettings.aiDisplayMaster; // all row numbers
+ 
+    // set up data array   
+    var asResultData = new Array();
+     
+    for (var i=0,c=aiRows.length; i<c; i++) 
+    {
+        iRow = aiRows[i];
+        var aData = this.fnGetData(iRow);
+        var sValue = aData[iColumn];
+         
+         //Strip html
+         sValue = $("<div>" + sValue + "</div>").text();
+                
+        // ignore empty values?
+        if (bIgnoreEmpty == true && sValue.length == 0) continue;
+ 
+        // ignore unique values?
+        else if (bUnique == true && jQuery.inArray(sValue, asResultData) > -1) continue;
+         
+        // else push the value onto the result data array
+        else asResultData.push(sValue);
+    }
+    
+     asResultData.sort();
+     
+    return asResultData;
+}}(jQuery));
+ 
+ 
+function fnCreateSelect( ID, aData )
+{
+    var r='<select id="' +  ID + '"><option value=""></option>', i, iLen=aData.length;
+    for ( i=0 ; i<iLen ; i++ )
+    {
+        r += '<option value="'+aData[i]+'">'+aData[i]+'</option>';
+    }
+    return r+'</select>';
+}
+ 
+ 
+$(document).ready(function() {
+    /* Initialise the DataTable */
+    var oTable = $('#reports_table').dataTable( {
+        "oLanguage": {
+            "sSearch": "Search all columns:"
+        }
+    } );
+     
+    /* Add a select menu for each TH element in the table footer */
+    $("tfoot th").each( function ( i ) {
+        this.innerHTML = this.innerHTML + fnCreateSelect( "filter_sel_" + i, oTable.fnGetColumnData(i) );
+        $('select', this).change( function () {
+            oTable.fnFilter( $(this).val(), i );
+        } );
+    } );
+    
+    $("#table_footer_id").children().hide();
+    
+    
+   		$("#reportdate").html("Report Date: " + new Date().toLocaleDateString()); 
+} );
+
+
+
+function tableToJson(table) 
+{
+    var data = [];
+
+    // first row needs to be headers
+    var headers = [];
+    for (var i=0; i<table.rows[0].cells.length; i++) {
+        headers[i] = table.rows[0].cells[i].innerHTML.toLowerCase().replace(/ /gi,'');
+    }
+
+
+    // go through cells
+    for (var i=0; i<table.rows.length - 1; i++) //-1 to exclude the footer.
+    {
+
+        var tableRow = table.rows[i];
+        var rowData = {};
+
+        for (var j=0; j<tableRow.cells.length; j++) {
+
+            rowData[ headers[j] ] = tableRow.cells[j].innerHTML;
+
+        }
+
+        data.push(rowData);
+    }       
+
+    return data;
+}
+
+
+function SaveAsPDF()
+{
+	var pdf = new jsPDF('p','pt','a4');
+	
+    var specialElementHandlers = {
+      'DIV to be rendered out': function(element, renderer){
+       return true;
+    }
+    };	
+
+        var table = tableToJson($('#reports_table').get(0))
+        var doc = new jsPDF("landscape");
+        doc.text(10, 20, "Report Date: " + new Date().toLocaleDateString());
+        
+        //
+        //Build filters string
+        //
+        var Filters = "Filters: ";
+        
+        //TODO: We could use the table headers directly for description, which would allow flexibility in changing layout...
+        if($("#filter_sel_1").val() != "")
+        	Filters += "Priority: " + $("#filter_sel_1").val() + "; "
+        if($("#filter_sel_2").val() != "")
+        	Filters += "Date: " + $("#filter_sel_2").val() + "; "
+        if($("#filter_sel_3").val() != "")
+        	Filters += "Assigned Agent: " + $("#filter_sel_3").val() + "; "
+        if($("#filter_sel_4").val() != "")
+        	Filters += "Status: " + $("#filter_sel_4").val() + "; "
+        if($("#filter_sel_5").val() != "")
+        	Filters += "Requester: " + $("#filter_sel_5").val() + "; "
+        if($("#filter_sel_6").val() != "")
+        	Filters += "Subject: " + $("#filter_sel_6").val() + "; "
+        if($('div.dataTables_filter input').val() != "")
+        	Filters += "Search: " + $('div.dataTables_filter input').val() + "; "
+        
+        if(Filters == "Filters: ")
+        	Filters += "None;"
+        	
+    	//
+        //END OF BUILD FILTERS STRING
+        //
+        
+        doc.setFontSize(10);
+        doc.text(10, 30, Filters);        
+        doc.text(10, 35, $("#reports_table_info").html());        
+        doc.setFontSize(12);
+        
+        doc.cellInitialize();
+
+        $.each(table, function (i, row){
+//            console.debug(row);
+            $.each(row, function (j, cell)
+            {
+            	//Strip HTML Tags
+         		cell = $("<div>" + cell + "</div>").text();
+				
+				//Determine width/height of cells.
+				var cellwidth = 20;
+				var cellheight = 10;
+				var cellallowedcharacterswide = 11;
+				switch(j)
+				{
+					case 'id':
+						cellwidth=13;
+						break;
+					case 'priority':
+						cellwidth=23;
+						break;
+					case 'assignedagent':
+						cellwidth=48;
+						cellallowedcharacterswide = 22;	
+						break;					
+					case 'date':
+						cellwidth=24;
+						break;
+					case 'status':
+						cellwidth=24;
+						break;
+					case 'requester':
+						cellwidth=48;
+						cellallowedcharacterswide = 22;
+						break;
+					case 'subject':
+						cellwidth=95;
+						cellallowedcharacterswide = 43;						
+						break;		
+					default:
+						break;				
+				}
+				
+				//Insert newlines every n characters
+				if(cell.length > cellallowedcharacterswide)
+					cell = cell.substring(0,cellallowedcharacterswide) + "...";
+				//cell.replace(/.{1,cellallowedcharacterswide} /g, "$&\n");
+                    
+                //Increase cell height for every n characters.
+//				cellheight = 10 * (Math.floor(cell.length/cellallowedcharacterswide) + 1);
+				
+				                    
+                doc.cell(10, 45,cellwidth, cellheight, cell, i);  // 2nd parameter=top margin,1st=left margin 3rd=row cell width 4th=Row height
+            })
+        })
+
+        doc.save('Report.pdf');
+
+	
+/*	var html=$("#Reports_Div")[0];
+	  
+	pdf.fromHTML(html,0,0, {
+	        'elementHandlers': specialElementHandlers
+	     });
+	pdf.save("Report.pdf");   */
+}
+</script>
